@@ -46,11 +46,28 @@ func (ds *DbSyncer) sendPSyncCmd(master, authType, passwd string, tlsEnable bool
 	bw := bufio.NewWriterSize(c, utils.WriterBufferSize)
 
 	log.Infof("DbSyncer[%d] try to send 'psync' command: run-id[%v], offset[%v]", ds.id, runId, prevOffset)
+
 	// send psync command and decode the result
 	runid, offset, wait := utils.SendPSyncContinue(br, bw, runId, prevOffset)
+	// send psync command again by useing  new offset
+	// by kexi
+	if runId == "" {
+		runId = runid
+	}
+		// reader buffer bind to client
+		c.Close()
+		c = utils.OpenNetConn(master, authType, passwd, tlsEnable)
+		utils.SendPSyncListeningPort(c, conf.Options.HttpProfile)
+		br = bufio.NewReaderSize(c, utils.ReaderBufferSize)
+		// writer buffer bind to client
+		bw = bufio.NewWriterSize(c, utils.WriterBufferSize)
+		log.Infof("DbSyncer[%d] try to send 'psync' command: again run-id[%v], offset[%v]", ds.id, runId, offset)
+		runid, offset, wait = utils.SendPSyncContinue(br, bw, runId, offset)
+
 	ds.stat.targetOffset.Set(offset)
 	ds.fullSyncOffset = offset // store the full sync offset
-
+	// set runId if empty
+	// by kexi
 	piper, pipew := pipe.NewSize(utils.ReaderBufferSize)
 	if wait == nil {
 		// continue

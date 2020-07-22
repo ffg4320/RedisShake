@@ -86,23 +86,38 @@ func (ds *DbSyncer) Sync() {
 
 	var err error
 	runId, offset, dbid := "?", int64(-1), 0
-	if ds.enableResumeFromBreakPoint {
+	// only allow sync, disallow rdb
+	// by kexi
+	//if ds.enableResumeFromBreakPoint {
 		// assign the checkpoint name with suffix if is cluster
-		if ds.slotLeftBoundary != -1 {
-			ds.checkpointName = utils.ChoseSlotInRange(utils.CheckpointKey, ds.slotLeftBoundary, ds.slotRightBoundary)
-		}
+	//if ds.slotLeftBoundary != -1 {
+	// set checkpointName is the utils.CheckpointKey, not use slot
+	// by kexi
 
-		// checkpoint reload if has
-		log.Infof("DbSyncer[%d] enable resume from break point, try to load checkpoint", ds.id)
-		runId, offset, dbid, err = checkpoint.LoadCheckpoint(ds.id, ds.source, ds.target, conf.Options.TargetAuthType,
-			ds.targetPassword, ds.checkpointName, conf.Options.TargetType == conf.RedisTypeCluster, conf.Options.SourceTLSEnable)
-		if err != nil {
-			log.Panicf("DbSyncer[%d] load checkpoint from %v failed[%v]", ds.id, ds.target, err)
-			return
-		}
-		log.Infof("DbSyncer[%d] checkpoint info: runId[%v], offset[%v] dbid[%v]", ds.id, runId, offset, dbid)
+        if ds.slotLeftBoundary != -1 {
+		ds.checkpointName = utils.ChoseSlotInRange(utils.CheckpointKey, ds.slotLeftBoundary, ds.slotRightBoundary)
 	}
 
+	//}
+
+	// checkpoint reload if has
+	log.Infof("DbSyncer[%d] enable resume from break point, try to load checkpoint", ds.id)
+	runId, offset, dbid, err = checkpoint.LoadCheckpoint(ds.id, ds.source, ds.target, conf.Options.TargetAuthType,
+		ds.targetPassword, ds.checkpointName, conf.Options.TargetType == conf.RedisTypeCluster, conf.Options.SourceTLSEnable)
+	if err != nil {
+		log.Panicf("DbSyncer[%d] load checkpoint from %v failed[%v]", ds.id, ds.target, err)
+		return
+	}
+	log.Infof("DbSyncer[%d] checkpoint info: runId[%v], offset[%v] dbid[%v]", ds.id, runId, offset, dbid)
+	//}
+	// load resume checkpoint, if not loaded; use offset from the source addr
+	// by  kexi
+	//
+	/*
+	if offset == int64(-1) {
+		runId, offset, dbid, err = checkpoint.GetSourceOffset(ds.id, ds.source, ds.checkpointName, conf.Options.SourceTLSEnable)
+	}
+	*/
 	base.Status = "waitfull"
 	var input io.ReadCloser
 	var nsize int64
@@ -130,11 +145,16 @@ func (ds *DbSyncer) Sync() {
 	reader := bufio.NewReaderSize(input, utils.ReaderBufferSize)
 
 	if isFullSync {
+		// !!disable full sync
+		// by kexi
+
+		log.Infof("DbSyncer[%d] disallow rdb full sync")
+		_ = nsize
 		// sync rdb
-		log.Infof("DbSyncer[%d] rdb file size = %d", ds.id, nsize)
-		base.Status = "full"
-		ds.syncRDBFile(reader, ds.target, conf.Options.TargetAuthType, ds.targetPassword, nsize, conf.Options.TargetTLSEnable)
-		ds.startDbId = 0
+		//log.Infof("DbSyncer[%d] rdb file size = %d", ds.id, nsize)
+		//base.Status = "full"
+		//ds.syncRDBFile(reader, ds.target, conf.Options.TargetAuthType, ds.targetPassword, nsize, conf.Options.TargetTLSEnable)
+		//ds.startDbId = 0
 	} else {
 		log.Infof("DbSyncer[%d] run incr-sync directly with db_id[%v]", ds.id, dbid)
 		ds.startDbId = dbid

@@ -22,6 +22,11 @@ func LoadCheckpoint(dbSyncerId int, sourceAddr string, target []string, authType
 	// TODO, for some kind of redis type, like codis, tencent cloud, the keyspace result may not be accurate
 	// so there maybe some problems.
 	mp, err := utils.ParseKeyspace(ret.([]byte))
+	// if no result, add db0 by default 
+	// by kexi
+        if mp == nil || len(mp) == 0 {
+                mp[int32(0)]=0
+        }
 	if err != nil {
 		return "", 0, 0, err
 	}

@@ -22,6 +22,9 @@ import (
 	"unsafe"
 )
 
+// every 10 second write offset 
+// by kexi
+var OffsetWrite = false
 func (ds *DbSyncer) syncCommand(reader *bufio.Reader, target []string, authType, passwd string, tlsEnable bool, dbid int) {
 	isCluster := conf.Options.TargetType == conf.RedisTypeCluster
 	c := utils.OpenRedisConnWithTimeout(target, authType, passwd, incrSyncReadeTimeout, incrSyncReadeTimeout, isCluster, tlsEnable)
@@ -86,6 +89,7 @@ func (ds *DbSyncer) fetchOffset() {
 				log.Errorf("DbSyncer[%d] Event:GetFakeSlaveOffsetFail\tId:%s\tError:%s",
 					ds.id, conf.Options.Id, err.Error())
 			}
+			OffsetWrite = true
 		}
 	}
 
@@ -294,7 +298,10 @@ func (ds *DbSyncer) sendTargetCommand(c redigo.Conn) {
 		if !ds.enableResumeFromBreakPoint || (cachedCount == 1 && lastOplog.Cmd == "ping") {
 			needBatch = false
 		}
-
+		_ = needBatch
+		// seems useless; comment
+		// by kexi
+		/*
 		var offset int64
 		// enable resume from break point
 		if needBatch {
@@ -307,7 +314,7 @@ func (ds *DbSyncer) sendTargetCommand(c redigo.Conn) {
 					ds.id, conf.Options.Id, err.Error())
 			}
 		}
-
+		*/ 
 		ds.addSendId(&sendId, len(cachedTunnel))
 		for _, cacheItem := range cachedTunnel {
 			if err := c.Send(cacheItem.Cmd, cacheItem.Args...); err != nil {
@@ -327,8 +334,10 @@ func (ds *DbSyncer) sendTargetCommand(c redigo.Conn) {
 					strArgv)
 			}
 		}
-
-		if needBatch {
+		// enable checkpoint write for break point resume
+		// by kexi
+		//if needBatch {
+		if true {
 			// need send run-id?
 			if _, ok := runIdMap[lastOplog.Db]; !ok {
 				runIdMap[lastOplog.Db] = struct{}{}
@@ -345,15 +354,20 @@ func (ds *DbSyncer) sendTargetCommand(c redigo.Conn) {
 				}
 			}
 
-			// add checkpoint
-			ds.addSendId(&sendId, 2)
-			if err := c.Send("hset", ds.checkpointName, checkpointOffset, offset); err != nil {
-				log.Panicf("DbSyncer[%d] Event:SendToTargetFail\tId:%s\tError:%s\t",
-					ds.id, conf.Options.Id, err.Error())
-			}
-			if err := c.Send("exec"); err != nil {
-				log.Panicf("DbSyncer[%d] Event:SendToTargetFail\tId:%s\tError:%s\t",
-					ds.id, conf.Options.Id, err.Error())
+			if OffsetWrite {
+				// add checkpoint
+				ds.addSendId(&sendId, 2)
+				// use source offset
+				// by kexi
+				if err := c.Send("hset", ds.checkpointName, checkpointOffset, ds.stat.sourceOffset); err != nil {
+					log.Panicf("DbSyncer[%d] Event:SendToTargetFail\tId:%s\tError:%s\t",
+						ds.id, conf.Options.Id, err.Error())
+				}
+				if err := c.Send("exec"); err != nil {
+					log.Panicf("DbSyncer[%d] Event:SendToTargetFail\tId:%s\tError:%s\t",
+						ds.id, conf.Options.Id, err.Error())
+				}
+				OffsetWrite = false
 			}
 		}
 
